@@ -59,7 +59,8 @@ build_script:
       export PATH="$HOME/.cargo/bin:$PATH"
       export ANDROID_HOME="$HOME/android-sdk"
       export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-      export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+      export NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+      export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
       cd rust_core
       cargo build --release --target aarch64-linux-android
       cd ..
