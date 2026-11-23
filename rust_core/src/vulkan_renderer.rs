@@ -6,6 +6,7 @@ use ash::{vk, Instance, Device};
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::os::raw::c_int;
+use std::sync::Mutex;
 use stb_image::image::{load_from_memory, LoadResult};
 
 /// Vulkan 渲染器状态
@@ -95,6 +96,23 @@ const CUBE_INDICES: [u16; 36] = [
     16, 17, 18, 18, 19, 16, // 顶面
     20, 21, 22, 22, 23, 20, // 底面
 ];
+
+// 最后错误信息（用于跨 FFI 返回给 Dart）
+static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+fn set_last_error(msg: String) {
+    if let Ok(mut guard) = LAST_ERROR.lock() {
+        *guard = Some(msg);
+    }
+}
+
+fn take_last_error() -> Option<String> {
+    if let Ok(mut guard) = LAST_ERROR.lock() {
+        guard.take()
+    } else {
+        None
+    }
+}
 
 // 嵌入式 SPIR-V 顶点着色器（文本立方体，带纹理坐标）
 const VERTEX_SHADER_SPIRV: &[u8] = include_bytes!("shaders/vert.spv");
@@ -1329,9 +1347,18 @@ pub extern "C" fn vulkan_renderer_init(
     match renderer.init(width as u32, height as u32) {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("Vulkan init error: {}", e);
+            set_last_error(e.clone());
             -1
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn vulkan_renderer_last_error() -> *mut c_char {
+    if let Some(msg) = take_last_error() {
+        CString::new(msg).unwrap().into_raw()
+    } else {
+        std::ptr::null_mut()
     }
 }
 
@@ -1356,7 +1383,7 @@ pub extern "C" fn vulkan_renderer_render_frame(
     match renderer.render_frame(skin_slice, out_slice) {
         Ok(bytes) => bytes as c_int,
         Err(e) => {
-            eprintln!("Vulkan render error: {}", e);
+            set_last_error(e.clone());
             -1
         }
     }

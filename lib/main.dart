@@ -303,8 +303,9 @@ class _MainHomePageState extends State<MainHomePage> {
           _vulkanReady = true;
         });
       } else {
+        final err = bridge.vulkanRendererLastError();
         setState(() {
-          _skinError = 'Vulkan 初始化失败，显示默认皮肤';
+          _skinError = 'Vulkan 初始化失败: $err，显示默认皮肤';
         });
       }
     } catch (e) {

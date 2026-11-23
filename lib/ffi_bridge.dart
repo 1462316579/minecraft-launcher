@@ -39,6 +39,7 @@ class McLauncherBridge {
       )? _vulkanRendererRenderFrame;
   void Function(Pointer<Void>)? _vulkanRendererFree;
   Pointer<Utf8> Function()? _vulkanRendererVersion;
+  Pointer<Utf8> Function()? _vulkanRendererLastError;
 
   /// 初始化并加载动态库（从 Flutter 资源提取到临时目录）
   Future<void> init() async {
@@ -141,6 +142,11 @@ class McLauncherBridge {
     _vulkanRendererVersion = _lib!
         .lookup<NativeFunction<Pointer<Utf8> Function()>>(
           'vulkan_renderer_version',
+        )
+        .asFunction<Pointer<Utf8> Function()>();
+    _vulkanRendererLastError = _lib!
+        .lookup<NativeFunction<Pointer<Utf8> Function()>>(
+          'vulkan_renderer_last_error',
         )
         .asFunction<Pointer<Utf8> Function()>();
   }
@@ -273,6 +279,16 @@ class McLauncherBridge {
   String vulkanRendererVersion() {
     if (!_loaded) return 'not loaded';
     final ptr = _vulkanRendererVersion!();
+    final str = ptr.toDartString();
+    _mcFreeString!(ptr);
+    return str;
+  }
+
+  /// 获取 Vulkan 渲染器上次错误信息
+  String vulkanRendererLastError() {
+    if (!_loaded) return 'not loaded';
+    final ptr = _vulkanRendererLastError!();
+    if (ptr.address == 0) return '';
     final str = ptr.toDartString();
     _mcFreeString!(ptr);
     return str;

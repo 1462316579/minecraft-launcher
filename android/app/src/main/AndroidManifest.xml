@@ -1,4 +1,18 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.mc_launcher">
+
+    <!-- 权限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <!-- 硬件特性：OpenGL ES 3.0（Vulkan 依赖） -->
+    <uses-feature android:glEsVersion="0x30000" android:required="true" />
+    <!-- Vulkan 特性声明（非强制，设备不支持时仍可运行，但显示默认皮肤） -->
+    <uses-feature android:name="android.hardware.vulkan.version" android:required="false" />
+    <uses-feature android:name="android.hardware.vulkan.compute" android:required="false" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:required="false" />
+
     <application
         android:label="my_app"
         android:name="${applicationName}"
