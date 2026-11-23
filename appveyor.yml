@@ -9,10 +9,13 @@ environment:
   NDK_VERSION: 27.0.12077973
 
 install:
-  # 安装基础依赖
+  # 安装基础依赖 (含 Java JDK，sdkmanager 需要)
   - sh: |
       sudo apt-get update -qq
-      sudo apt-get install -y -qq curl unzip xz-utils zip libglu1-mesa
+      sudo apt-get install -y -qq curl unzip xz-utils zip libglu1-mesa openjdk-21-jdk
+      export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+      export PATH="$JAVA_HOME/bin:$PATH"
+      java -version
 
   # 安装 Flutter (Linux, 用户目录避免权限问题)
   - sh: |
