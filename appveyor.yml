@@ -4,8 +4,8 @@ image: Ubuntu2204
 
 environment:
   FLUTTER_VERSION: 3.27.4
-  ANDROID_SDK_ROOT: /opt/android-sdk
-  ANDROID_HOME: /opt/android-sdk
+  ANDROID_SDK_ROOT: /home/appveyor/android-sdk
+  ANDROID_HOME: /home/appveyor/android-sdk
   NDK_VERSION: 27.0.12077973
 
 install:
@@ -14,26 +14,27 @@ install:
       sudo apt-get update -qq
       sudo apt-get install -y -qq curl unzip xz-utils zip libglu1-mesa
 
-  # 安装 Flutter (Linux)
+  # 安装 Flutter (Linux, 用户目录避免权限问题)
   - sh: |
-      FLUTTER_DIR="/opt/flutter"
+      FLUTTER_DIR="$HOME/flutter"
       if [ ! -d "$FLUTTER_DIR" ]; then
-        sudo mkdir -p "$FLUTTER_DIR"
+        mkdir -p "$FLUTTER_DIR"
         curl -L "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.27.4-stable.tar.xz" -o /tmp/flutter.tar.xz
-        sudo tar xf /tmp/flutter.tar.xz -C "$FLUTTER_DIR" --strip-components=1
+        tar xf /tmp/flutter.tar.xz -C "$FLUTTER_DIR" --strip-components=1
       fi
       export PATH="$FLUTTER_DIR/bin:$PATH"
+      git config --global --add safe.directory "$FLUTTER_DIR"
       flutter config --enable-android
       flutter doctor -v
 
   # 安装 Android SDK 命令行工具 (Linux)
   - sh: |
-      SDK_DIR="/opt/android-sdk"
-      sudo mkdir -p "$SDK_DIR"
+      SDK_DIR="$HOME/android-sdk"
+      mkdir -p "$SDK_DIR"
       curl -L "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdline-tools.zip
-      sudo unzip -o /tmp/cmdline-tools.zip -d "$SDK_DIR"
-      sudo mkdir -p "$SDK_DIR/cmdline-tools/latest"
-      sudo mv "$SDK_DIR/cmdline-tools/bin" "$SDK_DIR/cmdline-tools/latest/" 2>/dev/null || true
+      unzip -o /tmp/cmdline-tools.zip -d "$SDK_DIR"
+      mkdir -p "$SDK_DIR/cmdline-tools/latest"
+      mv "$SDK_DIR/cmdline-tools/bin" "$SDK_DIR/cmdline-tools/latest/" 2>/dev/null || true
       export ANDROID_HOME="$SDK_DIR"
       export PATH="$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
       yes | sdkmanager --licenses
@@ -51,7 +52,7 @@ build_script:
   # 构建 Rust 动态库（完全使用 Vulkan，CI 自动构建 .so）
   - sh: |
       export PATH="$HOME/.cargo/bin:$PATH"
-      export ANDROID_HOME="/opt/android-sdk"
+      export ANDROID_HOME="$HOME/android-sdk"
       export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
       cd rust_core
       cargo build --release --target aarch64-linux-android
@@ -64,8 +65,9 @@ build_script:
 
   # 构建 Flutter APK（完全使用 Vulkan 3D 皮肤，无需预构建 .so）
   - sh: |
-      export PATH="/opt/flutter/bin:$PATH"
-      export ANDROID_HOME="/opt/android-sdk"
+      export PATH="$HOME/flutter/bin:$PATH"
+      export ANDROID_HOME="$HOME/android-sdk"
+      git config --global --add safe.directory "$HOME/flutter"
       flutter build apk --release --target-platform android-arm64
 
 artifacts:
