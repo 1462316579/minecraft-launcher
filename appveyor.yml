@@ -4,17 +4,16 @@ image: Ubuntu2204
 
 environment:
   FLUTTER_VERSION: 3.27.4
-  ANDROID_SDK_ROOT: /home/appveyor/android-sdk
-  ANDROID_HOME: /home/appveyor/android-sdk
+  ANDROID_SDK_ROOT: $HOME/android-sdk
+  ANDROID_HOME: $HOME/android-sdk
+  JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
   NDK_VERSION: 27.0.12077973
 
 install:
-  # 安装基础依赖 (含 Java JDK，sdkmanager 需要)
+  # 安装基础依赖 (含 Java JDK，sdkmanager 和 Flutter Android 构建需要)
   - sh: |
       sudo apt-get update -qq
       sudo apt-get install -y -qq curl unzip xz-utils zip libglu1-mesa openjdk-21-jdk
-      export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-      export PATH="$JAVA_HOME/bin:$PATH"
       java -version
 
   # 安装 Flutter (Linux, 用户目录避免权限问题)
@@ -39,7 +38,8 @@ install:
       unzip -o /tmp/cmdline-tools.zip
       mv cmdline-tools latest 2>/dev/null || true
       export ANDROID_HOME="$SDK_DIR"
-      export PATH="$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
+      export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+      export PATH="$JAVA_HOME/bin:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
       yes | sdkmanager --licenses
       sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;$NDK_VERSION"
 
@@ -56,7 +56,8 @@ build_script:
   - sh: |
       export PATH="$HOME/.cargo/bin:$PATH"
       export ANDROID_HOME="$HOME/android-sdk"
-      export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+      export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+      export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
       cd rust_core
       cargo build --release --target aarch64-linux-android
       cd ..
@@ -70,6 +71,8 @@ build_script:
   - sh: |
       export PATH="$HOME/flutter/bin:$PATH"
       export ANDROID_HOME="$HOME/android-sdk"
+      export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+      export PATH="$JAVA_HOME/bin:$PATH"
       git config --global --add safe.directory "$HOME/flutter"
       flutter build apk --release --target-platform android-arm64
 
