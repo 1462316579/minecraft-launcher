@@ -45,6 +45,7 @@ install:
 
   # 安装 Rust 工具链 (Linux)
   - sh: |
+      cd "$APPVEYOR_BUILD_FOLDER"
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
       export PATH="$HOME/.cargo/bin:$PATH"
       rustc --version
@@ -54,6 +55,7 @@ install:
 build_script:
   # 构建 Rust 动态库（完全使用 Vulkan，CI 自动构建 .so）
   - sh: |
+      cd "$APPVEYOR_BUILD_FOLDER"
       export PATH="$HOME/.cargo/bin:$PATH"
       export ANDROID_HOME="$HOME/android-sdk"
       export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
@@ -64,11 +66,13 @@ build_script:
 
   # 将构建好的 .so 复制到 Flutter assets
   - sh: |
+      cd "$APPVEYOR_BUILD_FOLDER"
       mkdir -p assets/rust_lib
       cp rust_core/target/aarch64-linux-android/release/libmc_launcher_core.so assets/rust_lib/
 
   # 构建 Flutter APK（完全使用 Vulkan 3D 皮肤，无需预构建 .so）
   - sh: |
+      cd "$APPVEYOR_BUILD_FOLDER"
       export PATH="$HOME/flutter/bin:$PATH"
       export ANDROID_HOME="$HOME/android-sdk"
       export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
