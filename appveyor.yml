@@ -34,10 +34,10 @@ install:
       $env:PATH = "$sdkDir\cmdline-tools\latest\bin;$sdkDir\platform-tools;$env:PATH"
 
   # 接受 Android SDK 许可
-  - cmd: %ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager --licenses
+  - cmd: '%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager --licenses'
 
   # 安装 Android 平台和 NDK
-  - cmd: %ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;%NDK_VERSION%"
+  - cmd: '%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;%NDK_VERSION%"'
 
   # 安装 Rust 工具链
   - ps: |
