@@ -30,11 +30,11 @@ install:
   # 安装 Android SDK 命令行工具 (Linux)
   - sh: |
       SDK_DIR="$HOME/android-sdk"
-      mkdir -p "$SDK_DIR"
+      mkdir -p "$SDK_DIR/cmdline-tools"
+      cd "$SDK_DIR/cmdline-tools"
       curl -L "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdline-tools.zip
-      unzip -o /tmp/cmdline-tools.zip -d "$SDK_DIR"
-      mkdir -p "$SDK_DIR/cmdline-tools/latest"
-      mv "$SDK_DIR/cmdline-tools/bin" "$SDK_DIR/cmdline-tools/latest/" 2>/dev/null || true
+      unzip -o /tmp/cmdline-tools.zip
+      mv cmdline-tools latest 2>/dev/null || true
       export ANDROID_HOME="$SDK_DIR"
       export PATH="$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
       yes | sdkmanager --licenses
