@@ -1,0 +1,72 @@
+version: 1.0.{build}
+
+image: Ubuntu2204
+
+environment:
+  FLUTTER_VERSION: 3.27.4
+  ANDROID_SDK_ROOT: C:\android-sdk
+  ANDROID_HOME: C:\android-sdk
+  NDK_VERSION: 27.0.12077973
+
+install:
+  # 安装 Flutter
+  - ps: |
+      $flutterDir = "C:\flutter"
+      if (!(Test-Path $flutterDir)) {
+        New-Item -ItemType Directory -Path $flutterDir -Force
+        Invoke-WebRequest -Uri "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.27.4-stable.zip" -OutFile "$flutterDir/flutter.zip"
+        Expand-Archive -Path "$flutterDir/flutter.zip" -DestinationPath $flutterDir -Force
+      }
+      $env:PATH = "$flutterDir\bin;$env:PATH"
+      flutter config --enable-android
+      flutter doctor -v
+
+  # 安装 Android SDK 命令行工具
+  - ps: |
+      $sdkDir = "C:\android-sdk"
+      if (!(Test-Path $sdkDir)) {
+        New-Item -ItemType Directory -Path $sdkDir -Force
+        Invoke-WebRequest -Uri "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip" -OutFile "$sdkDir/cmdline-tools.zip"
+        Expand-Archive -Path "$sdkDir/cmdline-tools.zip" -DestinationPath $sdkDir -Force
+        Move-Item -Path "$sdkDir\cmdline-tools\cmdline-tools" -Destination "$sdkDir\cmdline-tools\latest" -Force
+      }
+      $env:ANDROID_HOME = $sdkDir
+      $env:PATH = "$sdkDir\cmdline-tools\latest\bin;$sdkDir\platform-tools;$env:PATH"
+
+  # 接受 Android SDK 许可
+  - cmd: %ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager --licenses
+
+  # 安装 Android 平台和 NDK
+  - cmd: %ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;%NDK_VERSION%"
+
+  # 安装 Rust 工具链
+  - ps: |
+      Invoke-WebRequest -Uri "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe" -OutFile "C:\rustup-init.exe"
+      Start-Process -FilePath "C:\rustup-init.exe" -ArgumentList "-y", "--default-toolchain", "stable" -Wait
+      $env:PATH = "C:\Users\appveyor\.cargo\bin;$env:PATH"
+      rustc --version
+      cargo --version
+
+  # 添加 Android 交叉编译目标
+  - cmd: rustup target add aarch64-linux-android
+
+build_script:
+  # 构建 Rust 动态库（完全使用 Vulkan，CI 自动构建 .so）
+  - cmd: |
+      cd rust_core
+      cargo build --release --target aarch64-linux-android
+      cd ..
+
+  # 将构建好的 .so 复制到 Flutter assets
+  - cmd: |
+      if not exist assets\rust_lib mkdir assets\rust_lib
+      copy rust_core\target\aarch64-linux-android\release\mc_launcher_core.so assets\rust_lib\
+
+  # 构建 Flutter APK（完全使用 Vulkan 3D 皮肤，无需预构建 .so）
+  - cmd: flutter build apk --release --target-platform android-arm64
+
+artifacts:
+  - path: build\app\outputs\flutter-apk\app-release.apk
+    name: Minecraft Launcher APK
+
+deploy: off

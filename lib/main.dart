@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -263,68 +263,81 @@ class MainHomePage extends StatefulWidget {
 }
 
 class _MainHomePageState extends State<MainHomePage> {
+  // Vulkan 渲染器指针（对应 FCL SkinRenderer / SkinViewer）
+  Pointer<Void>? _vulkanRenderer;
+  bool _vulkanReady = false;
   Uint8List? _skinBytes;
-  final int _skinWidth = 512;
-  final int _skinHeight = 512;
+  int _skinWidth = 512;
+  int _skinHeight = 512;
   bool _isLoading = false;
   String? _skinError;
   String _skinSource = '默认';
-  // 预先转换的各个面的 ui.Image（用于 3D 绘制）
-  ui.Image? _faceFront;
-  ui.Image? _faceRight;
-  ui.Image? _faceLeft;
-  ui.Image? _faceTop;
-  ui.Image? _faceBodyFront;
-  ui.Image? _faceBodyRight;
 
   @override
   void initState() {
     super.initState();
     // 对应 FCL defaultSkin()：立即显示嵌入式默认皮肤，不等网络下载
     _skinBytes = _generateDefaultSkin();
-    // 预先转换各个面的图片（用于 3D 绘制）
-    _prepareFaces();
-    // 异步尝试下载网络皮肤（可选增强，失败不影响显示）
+    // 初始化 Vulkan 渲染器（完全使用 Vulkan 实现 3D 皮肤模型）
+    _initVulkanRenderer();
+    // 异步尝试下载网络皮肤（可选增强，失败不影响默认皮肤显示）
     _downloadNetworkSkin();
   }
 
-  /// 预先将皮肤图片的各个区域转换为 ui.Image（用于 3D 绘制）
-  Future<void> _prepareFaces() async {
-    final image = img.decodeImage(_skinBytes!);
-    if (image == null) return;
+  /// 初始化 Vulkan 渲染器（对应 FCL SkinRenderer 初始化）
+  Future<void> _initVulkanRenderer() async {
+    try {
+      final bridge = McLauncherBridge();
+      await bridge.init();
 
-    // 辅助函数：裁剪区域并转换为 ui.Image
-    Future<ui.Image> _cropToUiImage(Rect rect) async {
-      final cropImg = img.copyCrop(
-        image,
-        x: (rect.left * image.width / 64).round(),
-        y: (rect.top * image.height / 64).round(),
-        width: (rect.width * image.width / 64).round(),
-        height: (rect.height * image.height / 64).round(),
-      );
-      final pngBytes = img.encodePng(cropImg);
-      final codec = await ui.instantiateImageCodec(pngBytes);
-      final frame = await codec.getNextFrame();
-      return frame.image;
+      // 创建 Vulkan 渲染器实例
+      _vulkanRenderer = bridge.vulkanRendererNew();
+
+      // 初始化 Vulkan（创建实例、设备、命令池等）
+      final ret = bridge.vulkanRendererInit(_vulkanRenderer!, _skinWidth, _skinHeight);
+
+      if (ret == 0) {
+        // 渲染一帧 3D 皮肤模型（完全使用 Vulkan）
+        _renderSkinFrame(bridge);
+        setState(() {
+          _vulkanReady = true;
+        });
+      } else {
+        setState(() {
+          _skinError = 'Vulkan 初始化失败，显示默认皮肤';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _skinError = 'Vulkan 不可用: $e，显示默认皮肤';
+      });
+    }
+  }
+
+  /// 渲染皮肤帧（调用 Vulkan render_frame，完全使用 Vulkan 渲染）
+  void _renderSkinFrame(McLauncherBridge bridge) {
+    if (_vulkanRenderer == null || _skinBytes == null) return;
+
+    final bufferSize = _skinWidth * _skinHeight * 4;
+    final outData = malloc.allocate<Uint8>(bufferSize);
+
+    final bytes = bridge.vulkanRendererRenderFrame(
+      _vulkanRenderer!,
+      _skinBytes!,
+      _skinWidth,
+      _skinHeight,
+      outData.cast(),
+      bufferSize,
+    );
+
+    if (bytes > 0 && mounted) {
+      setState(() {
+        _skinBytes = Uint8List.fromList(outData.asTypedList(bytes));
+        _skinSource = 'Vulkan 渲染';
+      });
     }
 
-    final faces = await Future.wait([
-      _cropToUiImage(Rect.fromLTWH(8, 8, 8, 8)),
-      _cropToUiImage(Rect.fromLTWH(16, 8, 8, 8)),
-      _cropToUiImage(Rect.fromLTWH(0, 8, 8, 8)),
-      _cropToUiImage(Rect.fromLTWH(8, 0, 8, 8)),
-      _cropToUiImage(Rect.fromLTWH(20, 20, 4, 12)),
-      _cropToUiImage(Rect.fromLTWH(24, 20, 4, 12)),
-    ]);
-
-    setState(() {
-      _faceFront = faces[0];
-      _faceRight = faces[1];
-      _faceLeft = faces[2];
-      _faceTop = faces[3];
-      _faceBodyFront = faces[4];
-      _faceBodyRight = faces[5];
-    });
+    malloc.free(outData);
   }
 
   /// 下载网络皮肤（可选增强，失败不影响默认皮肤显示）
@@ -348,6 +361,11 @@ class _MainHomePageState extends State<MainHomePage> {
               _skinBytes = Uint8List.fromList(img.encodePng(skinImage));
               _skinSource = url;
             });
+            // 重新渲染 Vulkan 帧
+            final bridge = McLauncherBridge();
+            if (_vulkanRenderer != null) {
+              _renderSkinFrame(bridge);
+            }
             print('皮肤下载成功: $url');
             return;
           }
@@ -396,7 +414,7 @@ class _MainHomePageState extends State<MainHomePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('皮肤动画设置'),
-        content: Text('来源: $_skinSource\n尺寸: ${_skinWidth}x$_skinHeight'),
+        content: Text('来源: $_skinSource\n尺寸: ${_skinWidth}x$_skinHeight\n渲染: ${_vulkanReady ? "Vulkan" : "默认"}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -405,6 +423,16 @@ class _MainHomePageState extends State<MainHomePage> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // 清理 Vulkan 渲染器
+    if (_vulkanRenderer != null) {
+      final bridge = McLauncherBridge();
+      bridge.vulkanRendererFree(_vulkanRenderer!);
+    }
+    super.dispose();
   }
 
   @override
@@ -424,10 +452,10 @@ class _MainHomePageState extends State<MainHomePage> {
   }
 
   // 皮肤模型面板（对应 FCL SkinViewer）
-  // 使用 CustomPaint + Transform 实现伪 3D 立方体效果（Vulkan 在 Android 上不可靠）
+  // 完全使用 Vulkan 渲染 3D 皮肤模型
   // 点击模型打开皮肤动画设置
   Widget _buildSkinViewerPanel() {
-    if (_skinBytes == null) {
+    if (!_vulkanReady && _skinBytes == null) {
       return const Center(
         child: CircularProgressIndicator(
           color: Color(0xFF4e79a7),
@@ -435,225 +463,43 @@ class _MainHomePageState extends State<MainHomePage> {
       );
     }
 
+    if (_skinError != null && !_vulkanReady) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Vulkan 不可用，显示默认皮肤'),
+            const SizedBox(height: 16),
+            if (_skinBytes != null)
+              Image.memory(
+                _skinBytes!,
+                width: _skinWidth.toDouble(),
+                height: _skinHeight.toDouble(),
+                fit: BoxFit.contain,
+              ),
+          ],
+        ),
+      );
+    }
+
     return GestureDetector(
       onTap: _onSkinTapped,
       child: Center(
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.001) // 透视投影
-            ..rotateX(0.2) // 俯视角度
-            ..rotateY(0.4), // 侧视角度
-          child: SizedBox(
-            width: 300,
-            height: 400,
-            child: SkinModel3D(
-              faceFront: _faceFront,
-              faceRight: _faceRight,
-              faceLeft: _faceLeft,
-              faceTop: _faceTop,
-              faceBodyFront: _faceBodyFront,
-              faceBodyRight: _faceBodyRight,
-            ),
-          ),
-        ),
+        child: _skinBytes != null
+            ? Image.memory(
+                _skinBytes!,
+                width: _skinWidth.toDouble(),
+                height: _skinHeight.toDouble(),
+                fit: BoxFit.contain,
+              )
+            : const Center(
+                child: Text(
+                  'Vulkan 渲染失败',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              ),
       ),
     );
-  }
-}
-
-/// 伪 3D 皮肤模型（对应 FCL SkinRenderer 的立方体渲染）
-/// 使用 CustomPaint 绘制 6 个面，模拟 3D 方块效果
-class SkinModel3D extends StatelessWidget {
-  final ui.Image? faceFront;
-  final ui.Image? faceRight;
-  final ui.Image? faceLeft;
-  final ui.Image? faceTop;
-  final ui.Image? faceBodyFront;
-  final ui.Image? faceBodyRight;
-
-  const SkinModel3D({
-    super.key,
-    this.faceFront,
-    this.faceRight,
-    this.faceLeft,
-    this.faceTop,
-    this.faceBodyFront,
-    this.faceBodyRight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.infinite,
-      painter: _SkinModelPainter(
-        faceFront,
-        faceRight,
-        faceLeft,
-        faceTop,
-        faceBodyFront,
-        faceBodyRight,
-      ),
-    );
-  }
-}
-
-/// 3D 皮肤模型绘制器
-/// 绘制立方体的 6 个面：正面、右面、左面、顶面、身体正面、身体右面
-/// 每个面使用皮肤图片的不同区域作为纹理
-class _SkinModelPainter extends CustomPainter {
-  final ui.Image? faceFront;
-  final ui.Image? faceRight;
-  final ui.Image? faceLeft;
-  final ui.Image? faceTop;
-  final ui.Image? faceBodyFront;
-  final ui.Image? faceBodyRight;
-
-  _SkinModelPainter(
-    this.faceFront,
-    this.faceRight,
-    this.faceLeft,
-    this.faceTop,
-    this.faceBodyFront,
-    this.faceBodyRight,
-  );
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (faceFront == null) return;
-
-    final center = size.center(Offset.zero);
-    final faceSize = size.width * 0.5; // 每个面的大小
-    final zDepth = faceSize * 0.3; // 深度偏移
-
-    // 正面（前面）- 皮肤头部正面
-    if (faceFront != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(-faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-          center + Offset(faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-          center + Offset(faceSize / 2 + zDepth * 0.3, faceSize / 2 + zDepth * 0.15),
-          center + Offset(-faceSize / 2 + zDepth * 0.3, faceSize / 2 + zDepth * 0.15),
-        ],
-        faceFront!,
-      );
-    }
-
-    // 右面 - 皮肤头部右侧
-    if (faceRight != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-          center + Offset(faceSize / 2 - zDepth * 0.3, -faceSize / 2 - zDepth * 0.15),
-          center + Offset(faceSize / 2 - zDepth * 0.3, faceSize / 2 - zDepth * 0.15),
-          center + Offset(faceSize / 2 + zDepth * 0.3, faceSize / 2 + zDepth * 0.15),
-        ],
-        faceRight!,
-      );
-    }
-
-    // 左面 - 皮肤头部左侧
-    if (faceLeft != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(-faceSize / 2 - zDepth * 0.3, -faceSize / 2 - zDepth * 0.15),
-          center + Offset(-faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-          center + Offset(-faceSize / 2 + zDepth * 0.3, faceSize / 2 + zDepth * 0.15),
-          center + Offset(-faceSize / 2 - zDepth * 0.3, faceSize / 2 - zDepth * 0.15),
-        ],
-        faceLeft!,
-      );
-    }
-
-    // 顶面 - 皮肤头部顶部
-    if (faceTop != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(-faceSize / 2 - zDepth * 0.3, -faceSize / 2 - zDepth * 0.15),
-          center + Offset(faceSize / 2 - zDepth * 0.3, -faceSize / 2 - zDepth * 0.15),
-          center + Offset(faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-          center + Offset(-faceSize / 2 + zDepth * 0.3, -faceSize / 2 + zDepth * 0.15),
-        ],
-        faceTop!,
-      );
-    }
-
-    // 身体正面
-    if (faceBodyFront != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(-faceSize / 3 + zDepth * 0.2, faceSize / 3 + zDepth * 0.1),
-          center + Offset(faceSize / 3 + zDepth * 0.2, faceSize / 3 + zDepth * 0.1),
-          center + Offset(faceSize / 3 + zDepth * 0.2, faceSize - zDepth * 0.1),
-          center + Offset(-faceSize / 3 + zDepth * 0.2, faceSize - zDepth * 0.1),
-        ],
-        faceBodyFront!,
-      );
-    }
-
-    // 身体右面
-    if (faceBodyRight != null) {
-      _drawTexturedFace(
-        canvas,
-        [
-          center + Offset(faceSize / 3 + zDepth * 0.2, faceSize / 3 + zDepth * 0.1),
-          center + Offset(faceSize / 2 - zDepth * 0.2, faceSize / 3 - zDepth * 0.1),
-          center + Offset(faceSize / 2 - zDepth * 0.2, faceSize - zDepth * 0.2),
-          center + Offset(faceSize / 3 + zDepth * 0.2, faceSize - zDepth * 0.1),
-        ],
-        faceBodyRight!,
-      );
-    }
-  }
-
-  void _drawTexturedFace(
-    Canvas canvas,
-    List<Offset> points,
-    ui.Image image,
-  ) {
-    if (points.length < 4) return;
-
-    final paint = Paint()
-      ..filterQuality = FilterQuality.medium;
-
-    // 计算四边形的边界矩形
-    final left = points.map((p) => p.dx).reduce((a, b) => a < b ? a : b);
-    final top = points.map((p) => p.dy).reduce((a, b) => a < b ? a : b);
-    final right = points.map((p) => p.dx).reduce((a, b) => a > b ? a : b);
-    final bottom = points.map((p) => p.dy).reduce((a, b) => a > b ? a : b);
-    final rect = Rect.fromLTRB(left, top, right, bottom);
-
-    // 绘制纹理矩形（简化版，不做真正的透视映射）
-    canvas.drawImageRect(
-      image,
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-      rect,
-      paint,
-    );
-
-    // 绘制面边框，增强 3D 感
-    final borderPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    for (int i = 0; i < points.length; i++) {
-      canvas.drawLine(points[i], points[(i + 1) % points.length], borderPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SkinModelPainter oldDelegate) {
-    return oldDelegate.faceFront != faceFront ||
-        oldDelegate.faceRight != faceRight ||
-        oldDelegate.faceLeft != faceLeft ||
-        oldDelegate.faceTop != faceTop ||
-        oldDelegate.faceBodyFront != faceBodyFront ||
-        oldDelegate.faceBodyRight != faceBodyRight;
   }
 }
 
