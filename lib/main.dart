@@ -469,7 +469,7 @@ class _MainHomePageState extends State<MainHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('Vulkan 不可用，显示默认皮肤'),
+            Text(_skinError!),
             const SizedBox(height: 16),
             if (_skinBytes != null)
               Image.memory(
