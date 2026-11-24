@@ -355,6 +355,13 @@ impl VulkanRenderer {
             ..Default::default()
         };
 
+        let dynamic_states = [
+            vk::DynamicState::VIEWPORT,
+            vk::DynamicState::SCISSOR,
+        ];
+        let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
+            .dynamic_states(&dynamic_states);
+
         let rasterizer = vk::PipelineRasterizationStateCreateInfo::default()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
@@ -422,6 +429,7 @@ impl VulkanRenderer {
             p_vertex_input_state: &vertex_input_info,
             p_input_assembly_state: &input_assembly,
             p_viewport_state: &viewport_state,
+            p_dynamic_state: &dynamic_state_info,
             p_rasterization_state: &rasterizer,
             p_multisample_state: &multisampling,
             p_color_blend_state: &color_blending,
@@ -997,6 +1005,20 @@ impl VulkanRenderer {
                 &[descriptor_set],
                 &[],
             );
+
+            // 设置动态 viewport 和 scissor
+            let viewport = vk::Viewport::default()
+                .x(0.0)
+                .y(0.0)
+                .width(self.width as f32)
+                .height(self.height as f32)
+                .min_depth(0.0)
+                .max_depth(1.0);
+            let scissor = vk::Rect2D::default()
+                .offset(vk::Offset2D { x: 0, y: 0 })
+                .extent(vk::Extent2D { width: self.width, height: self.height });
+            device.cmd_set_viewport(command_buffer, 0, &[viewport]);
+            device.cmd_set_scissor(command_buffer, 0, &[scissor]);
         }
 
         // 绑定顶点缓冲并绘制
